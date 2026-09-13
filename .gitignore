@@ -1,0 +1,23 @@
+# System / OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backend (Spring Boot / Maven / Gradle)
+target/
+.gradle/
+build/
+*.class
+*.jar
+
+# Frontend (Node / React / Vue)
+node_modules/
+dist/
+build/
+.next/
+*.log
