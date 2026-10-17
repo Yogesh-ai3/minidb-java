@@ -2,6 +2,10 @@ package minidb.monitoring;
 
 public enum EventType {
 
+    COMMAND_RECEIVED,
+    PARSING_SUCCEEDED,
+    PARSING_FAILED,
+
     PROCESS_STARTED,
     PROCESS_COMPLETED,
 
