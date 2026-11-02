@@ -1,5 +1,7 @@
 package minidb;
 
+import minidb.database.DatabaseManager;
+
 import minidb.monitoring.ConsoleMonitor;
 import minidb.monitoring.EventType;
 import minidb.monitoring.SystemEvent;
@@ -12,16 +14,34 @@ import minidb.sql.Token;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+
+import java.nio.file.Path;
 import java.util.List;
 
 public class MiniDB {
 
     public static void main(String[] args) {
-        SystemEventBus eventBus = new SystemEventBus();
-        eventBus.addListener(new ConsoleMonitor());
+    SystemEventBus eventBus = new SystemEventBus();
+    eventBus.addListener(new ConsoleMonitor());
 
+    try (DatabaseManager manager =
+                 new DatabaseManager(Path.of("data"), eventBus)) {
+        runRepl(manager, eventBus);
+    } catch (IOException exception) {
+        System.err.println("Database error: " + exception.getMessage());
+    }
+
+    System.out.println("Goodbye!");
+}
+
+    private static void runRepl(
+            DatabaseManager manager,
+            SystemEventBus eventBus
+    ) {
         System.out.println("MiniDB starting...");
-        System.out.println("Type SQL statements or 'exit' to quit.");
+        System.out.println(
+                "Type SQL statements or 'exit' to quit."
+        );
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(System.in))) {
@@ -45,7 +65,7 @@ public class MiniDB {
                     continue;
                 }
 
-                processCommand(sql, eventBus);
+                processCommand(sql, manager, eventBus);
             }
 
         } catch (IOException exception) {
@@ -54,25 +74,26 @@ public class MiniDB {
                             + exception.getMessage()
             );
         }
-
-        System.out.println("Goodbye!");
     }
 
     private static void processCommand(
             String sql,
-            SystemEventBus eventBus) {
-
+            DatabaseManager manager,
+            SystemEventBus eventBus
+    ) {
         eventBus.publish(new SystemEvent(
                 EventType.COMMAND_RECEIVED,
                 "SQL command received"
         ));
+
+        final SqlCommand command;
 
         try {
             Lexer lexer = new Lexer(sql);
             List<Token> tokens = lexer.scanTokens();
 
             Parser parser = new Parser(tokens);
-            SqlCommand command = parser.parse();
+            command = parser.parse();
 
             eventBus.publish(new SystemEvent(
                     EventType.PARSING_SUCCEEDED,
@@ -82,9 +103,6 @@ public class MiniDB {
             System.out.println(
                     "Command parsed successfully: "
                             + command.getClass().getSimpleName()
-            );
-            System.out.println(
-                    "Execution is not implemented yet."
             );
 
         } catch (RuntimeException exception) {
@@ -97,6 +115,18 @@ public class MiniDB {
 
             System.out.println(
                     "SQL error: " + exception.getMessage()
+            );
+
+            return;
+        }
+
+        try {
+            String result = manager.execute(command);
+            System.out.println(result);
+
+        } catch (IOException | RuntimeException exception) {
+            System.out.println(
+                    "Execution error: " + exception.getMessage()
             );
         }
     }

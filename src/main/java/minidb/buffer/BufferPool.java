@@ -17,10 +17,7 @@ import java.util.Objects;
 public final class BufferPool {
 
     private final List<BufferFrame> frames;
-
-    // Access order: least recently used entry comes first.
     private final LinkedHashMap<Long, BufferFrame> framesByPage;
-
     private final DiskStorage storage;
     private final SystemEventBus eventBus;
 
@@ -56,14 +53,13 @@ public final class BufferPool {
     public synchronized BufferFrame getPage(long pageId)
             throws IOException {
 
-        // A cache hit updates the page's LRU position.
         BufferFrame cached = framesByPage.get(pageId);
 
         if (cached != null) {
             return cached;
         }
 
-        // Read first so an invalid page request cannot evict a valid page.
+        // Read first so an invalid page cannot evict a valid cached page.
         Page page = storage.readPage(pageId);
 
         BufferFrame frame = findFreeFrame();
@@ -85,7 +81,7 @@ public final class BufferPool {
     }
 
     /**
-     * Finds a cached page without changing its LRU position.
+     * Looks up a cached page without changing its LRU position.
      */
     public synchronized BufferFrame findFrameByPageId(long pageId) {
         for (Map.Entry<Long, BufferFrame> entry
@@ -108,6 +104,39 @@ public final class BufferPool {
         return null;
     }
 
+    /**
+     * Writes a cached dirty page to disk.
+     * Does nothing if the page is not currently cached.
+     */
+    public synchronized void flushPage(long pageId) throws IOException {
+        BufferFrame frame = findFrameByPageId(pageId);
+
+        if (frame != null) {
+            flushFrame(frame);
+        }
+    }
+
+    /**
+     * Writes every dirty cached page to disk.
+     */
+    public synchronized void flushAll() throws IOException {
+        for (BufferFrame frame : frames) {
+            if (frame.isOccupied() && frame.isDirty()) {
+                flushFrame(frame);
+            }
+        }
+    }
+
+    private void flushFrame(BufferFrame frame) throws IOException {
+        if (!frame.isOccupied() || !frame.isDirty()) {
+            return;
+        }
+
+        // Clear dirty only after the disk write succeeds.
+        storage.writePage(frame.getPage());
+        frame.clearDirty();
+    }
+
     private BufferFrame evictLeastRecentlyUsed() throws IOException {
         Iterator<Map.Entry<Long, BufferFrame>> iterator =
                 framesByPage.entrySet().iterator();
@@ -119,16 +148,10 @@ public final class BufferPool {
         }
 
         Map.Entry<Long, BufferFrame> eldest = iterator.next();
-
         long pageId = eldest.getKey();
         BufferFrame frame = eldest.getValue();
 
-        // Persist dirty data before removing the page from memory.
-        // If the write fails, retain the cached page.
-        if (frame.isDirty()) {
-            storage.writePage(frame.getPage());
-            frame.clearDirty();
-        }
+        flushFrame(frame);
 
         iterator.remove();
         frame.clear();
