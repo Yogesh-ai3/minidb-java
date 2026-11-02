@@ -21,3 +21,6 @@ dist/
 build/
 .next/
 *.log
+
+# Databse File
+data/
